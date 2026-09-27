@@ -4,7 +4,8 @@ import argparse
 import json
 import math
 import os
-from datetime import datetime, timedelta
+import uuid
+from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -77,7 +78,7 @@ class PaperTrader:
                 "version": 1,
                 "paper_balance": None,
                 "open_positions": [],
-                "trades_by_day": {}
+                "trades_by_day": {},
             }
         self.state.setdefault("open_positions", [])
         self.state.setdefault("trades_by_day", {})
@@ -107,7 +108,7 @@ class PaperTrader:
         return [session["entry_time"] for session in self.schedule["sessions"]]
 
     def pre_analysis_context(self, now=None, volatility_regime=None, rvi_state=None, levels=None):
-        """Describe preparation windows only; this function never makes a trade decision."""
+        """Describe preparation windows only; this never makes a trade decision."""
         local_time = self._local_time(now)
         session = None
         if self._weekday_allowed(local_time):
@@ -123,33 +124,31 @@ class PaperTrader:
             "prepared_context": {
                 "volatility_regime": volatility_regime,
                 "rvi_state": rvi_state,
-                "levels": levels
+                "levels": levels,
             },
             "trade_decision": None,
-            "note": "Preparation only; research and planning do not decide whether to trade."
+            "note": "Preparation only; research and planning do not decide whether to trade.",
         }
 
     def evaluate_setup(self, candidate, now=None):
-        """Log and validate one setup; accepted quantity risks at most 1 percent."""
+        """Log and validate a paper setup, enforcing at most 1 percent risk."""
         raw_candidate = candidate
         if not isinstance(candidate, dict):
             candidate = {}
         local_time = None
 
         def reject(reason):
-            event = {
+            self._log({
                 "event": "setup_evaluated",
                 "result": "rejected",
                 "reason": reason,
                 "evaluated_at": local_time.isoformat() if local_time else self._local_time().isoformat(),
-                "candidate": raw_candidate
-            }
-            self._log(event)
+                "candidate": raw_candidate,
+            })
             return {"accepted": False, "reason": reason}
 
         try:
-            requested_time = now if now is not None else candidate.get("timestamp")
-            local_time = self._local_time(requested_time)
+            local_time = self._local_time(now if now is not None else candidate.get("timestamp"))
         except (ValueError, TypeError) as exc:
             return reject("invalid_timestamp: " + str(exc))
         if not isinstance(raw_candidate, dict):
@@ -158,7 +157,6 @@ class PaperTrader:
             return reject("weekday_not_allowed")
         if local_time.strftime("%H:%M") not in self.allowed_entry_minutes():
             return reject("outside_allowed_entry_minute")
-
         try:
             symbol = str(candidate.get("symbol", "")).strip()
             side = str(candidate.get("side", "")).strip().lower()
@@ -177,35 +175,33 @@ class PaperTrader:
                 balance = _positive(candidate.get("paper_balance"), "initial paper_balance")
             else:
                 balance = _positive(balance, "paper_balance")
-        except ValueError as exc:
+        except (ValueError, TypeError) as exc:
             return reject("invalid_setup: " + str(exc))
 
         local_day = local_time.date().isoformat()
         daily_count = int(self.state["trades_by_day"].get(local_day, 0))
         max_trades = int(self.schedule["execution"]["max_trades_per_local_day"])
-        if daily_count >= max_trades:
+        if daily_count >= min(max_trades, 3):
             return reject("daily_trade_limit_reached")
 
-        execution = self.schedule["execution"]
-        risk_fraction = float(execution["risk_cap_percent_of_paper_balance_per_trade"]) / 100.0
+        risk_fraction = min(
+            _number(self.schedule["execution"]["risk_cap_percent_of_paper_balance_per_trade"], "risk cap"),
+            1.0,
+        ) / 100.0
         max_risk = balance * risk_fraction
         risk_per_unit = abs(entry - stop)
         quantity = max_risk / risk_per_unit
-        opened_at = local_time
-        deadline = opened_at + timedelta(minutes=int(execution["max_hold_minutes"]))
         position = {
-            "position_id": str(__import__("uuid").uuid4()),
+            "position_id": str(uuid.uuid4()),
             "symbol": symbol,
             "side": side,
-            "entry_time": opened_at.isoformat(),
+            "entry_time": local_time.isoformat(),
             "entry_date": local_day,
             "entry_price": entry,
             "hard_stop": stop,
             "quantity": quantity,
             "risk_amount": max_risk,
             "max_risk_amount": max_risk,
-            "max_hold_deadline": deadline.isoformat(),
-            "take_profit_at_minutes_after_entry": int(execution["take_profit_minutes_after_entry"])
         }
         self.state["paper_balance"] = balance
         self.state["trades_by_day"][local_day] = daily_count + 1
@@ -215,14 +211,14 @@ class PaperTrader:
             "event": "setup_evaluated",
             "result": "accepted",
             "reason": "schedule_and_risk_checks_passed",
-            "evaluated_at": opened_at.isoformat(),
+            "evaluated_at": local_time.isoformat(),
             "candidate": raw_candidate,
-            "position": position
+            "position": position,
         })
         return {"accepted": True, "position": position}
 
     def update_price(self, symbol, price, now=None):
-        """Apply a supplied quote and close at stop or the 45-minute max-hold deadline."""
+        """Apply an operator-supplied quote and close matching positions at hard stops."""
         local_time = self._local_time(now)
         quote = _positive(price, "price")
         symbol = str(symbol).strip()
@@ -232,27 +228,16 @@ class PaperTrader:
             if position["symbol"] != symbol:
                 remaining.append(position)
                 continue
-            deadline = datetime.fromisoformat(position["max_hold_deadline"])
             is_long = position["side"] == "long"
             stop_hit = quote <= position["hard_stop"] if is_long else quote >= position["hard_stop"]
-            if stop_hit:
-                exit_price = position["hard_stop"]
-                reason = "hard_stop"
-            elif local_time >= deadline:
-                exit_price = quote
-                reason = "time_exit_max_hold_45m"
-            else:
+            if not stop_hit:
                 remaining.append(position)
                 continue
+            exit_price = position["hard_stop"]
             points = exit_price - position["entry_price"]
             pnl = points * position["quantity"] * (1.0 if is_long else -1.0)
-            if pnl > 0:
-                outcome = "win"
-            elif pnl < 0:
-                outcome = "loss"
-            else:
-                outcome = "breakeven"
             self.state["paper_balance"] = float(self.state["paper_balance"]) + pnl
+            outcome = "win" if pnl > 0 else "loss" if pnl < 0 else "breakeven"
             record = {
                 "event": "position_closed",
                 "position_id": position["position_id"],
@@ -266,8 +251,8 @@ class PaperTrader:
                 "quantity": position["quantity"],
                 "pnl": pnl,
                 "outcome": outcome,
-                "close_reason": reason,
-                "paper_balance_after_close": self.state["paper_balance"]
+                "close_reason": "hard_stop",
+                "paper_balance_after_close": self.state["paper_balance"],
             }
             self._log(record)
             closed.append(record)
@@ -288,7 +273,7 @@ class PaperTrader:
             "open_positions": self.state["open_positions"],
             "market_data_connection": False,
             "broker_connection": False,
-            "note": "No live data or broker is connected. Supply paper candidates and prices explicitly."
+            "note": "No live data or broker is connected. Only price-based hard stops are implemented; take-profit targets and manual close are not implemented.",
         }
 
 
@@ -303,7 +288,7 @@ def run(action="", paper=True):
         "mode": "scheduled_paper_only",
         "market_data": "not_configured",
         "broker": "not_configured",
-        "orders_submitted": 0
+        "orders_submitted": 0,
     }
 
 
@@ -313,10 +298,10 @@ def main(argv=None):
     )
     parser.add_argument("--paper", action="store_true", help="required; live trading is unavailable")
     parser.add_argument("--candidate-file", help="JSON object describing one setup to evaluate")
-    parser.add_argument("--symbol", help="symbol for a supplied quote to update open paper positions")
-    parser.add_argument("--price", type=float, help="supplied quote for stop or max-hold evaluation")
+    parser.add_argument("--symbol", help="symbol for an operator-supplied quote")
+    parser.add_argument("--price", type=float, help="supplied quote used only to evaluate hard stops")
     parser.add_argument("--balance", type=float, help="initial paper balance for the first accepted setup")
-    parser.add_argument("--now", help="optional ISO 8601 timestamp with timezone offset, for replay/testing")
+    parser.add_argument("--now", help="optional timezone-aware ISO 8601 timestamp for replay/testing")
     args = parser.parse_args(argv)
     if not args.paper:
         parser.error("live trading is unavailable; pass --paper")
@@ -330,8 +315,7 @@ def main(argv=None):
             symbol = args.symbol
             if not symbol and args.candidate_file:
                 with open(args.candidate_file, "r", encoding="ascii") as handle:
-                    candidate_for_symbol = json.load(handle)
-                symbol = candidate_for_symbol.get("symbol")
+                    symbol = json.load(handle).get("symbol")
             if not symbol:
                 parser.error("candidate file must contain a symbol when --price is used")
             result["closed_positions"] = trader.update_price(symbol, args.price, args.now)
@@ -340,11 +324,10 @@ def main(argv=None):
                 candidate = json.load(handle)
             if not isinstance(candidate, dict):
                 raise ValueError("candidate file must contain a JSON object")
-            candidate = dict(candidate)
             if args.balance is not None:
                 candidate["paper_balance"] = args.balance
             result["setup"] = trader.evaluate_setup(candidate, args.now)
-        else:
+        elif args.price is None:
             result["status"] = trader.status()
         print(json.dumps(result, ensure_ascii=True, indent=2, sort_keys=True))
         return 0
