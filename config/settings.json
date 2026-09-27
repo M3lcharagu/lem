@@ -1,0 +1,15 @@
+{
+  "project": "Cold Limb",
+  "default_mode": "paper",
+  "markets": [
+    "Deriv VIX10",
+    "Deriv VIX25",
+    "Deriv VIX75",
+    "Deriv VIX100",
+    "similar volatility indices"
+  ],
+  "integrations": {
+    "broker": null,
+    "browser_automation": null
+  }
+}
