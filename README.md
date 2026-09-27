@@ -1,29 +1,23 @@
-# LEM - volatility indices trading lab
+# LEM - volatility indices paper-trading lab
 
-LEM is a research scaffold for volatility-index strategy ideas and paper-trading workflow experiments. It is not a broker-connected or live-trading system. Market-data connections, automated signals, and broker integrations are not configured.
+LEM is a research scaffold for synthetic volatility-index strategy experiments. It is paper-only: it does not connect a broker account, submit orders, or run unattended.
 
-## Quick start
+## Quickstart
 
-From a Catalina shell with Python 3.9 or newer:
+From a Python 3.9+ shell at the repository root:
 
 ```sh
-git clone https://github.com/M3lcharagu/lem.git
-cd lem
-python3 -m agents.executor_agent --paper
+python3 agents/hermes_agent.py --paper
 ```
 
-The command displays local paper-ledger status. It does not fetch data, create signals, or submit orders. See [docs/QUICKSTART.md](docs/QUICKSTART.md) for paper-ledger use and local pre-analysis.
+The public runner is `agents/hermes_agent.py`; it orchestrates six internal role modules and prints one `HERMES CALL: ENTER/SKIP/WAIT` decision block. It requires the exact configured Africa/Nairobi entry minute, Mon-Thu and the controls in `config/settings.json`. The default symbol is `R_25` (choose `R_75` there as needed), M1 entries use M15/M1 regime context, maximum three per day and `risk_pct` defaults to 0.01. A paper balance of 1000.0 is a configurable simulation default, not an account balance.
 
-## Pre-analysis
+For public Deriv candle history, install optional `websocket-client` and set `DERIV_APP_ID` to an app ID you control. Without it or when the feed is unavailable Hermes safely reports `WAIT`. No authorization or order API is used. Browser diagnostics are opt-in (`USE_BROWSER_FEED` defaults false); live chart selectors are unverified and Catalina ChromeDriver 115.x compatibility is not verified.
 
-The local planner reads the first 30 OHLC CSV records and prints separate blocks for 240, 180, 60, 45, 30, and 15 minute horizons. Run it with `python3 agents/planner_agent.py path/to/session.csv`; the required columns are `timestamp,open,high,low,close`. With no file or no records, it prints exactly `waiting for first 30 minutes of session data` and produces no analysis. It uses deterministic observed-data heuristics only: a three-candle non-overlap gap is an FVG, a later close invalidating that gap marks an IFVG, and equal/recent highs and lows are liquidity references. All horizon blocks use the same supplied snapshot; they are not predictions and no live or future data is fetched. Details are in [docs/QUICKSTART.md](docs/QUICKSTART.md).
+Paper decisions append to `logs/trades.csv` and skips to `logs/skips.csv`. An `ENTER` records a paper plan only, not a fill. See [docs/AGENT_OPS.md](docs/AGENT_OPS.md) for the seven roles, safety limits, data protocol and compatibility notes.
 
-## Schedule and paper safeguards
+## Existing research tools and schedule
 
-The authoritative schedule is [config/execution_schedule.json](config/execution_schedule.json), in `Africa/Nairobi`: Monday through Thursday, with sessions at 09:30, 11:30, and 14:30; preparation starts at 09:00, 11:00, and 14:00; entries are allowed only at the exact local minutes 09:40, 11:40, and 14:40. No wider execution window is inferred. At most three entries may be accepted per local calendar day. Each candidate requires a hard stop and is sized so planned risk is at most 1% of paper balance.
+The existing paper executor and planner are preserved. `config/execution_schedule.json` remains the schedule reference: Monday-Thursday, sessions 09:30, 11:30 and 14:30 Africa/Nairobi with exact entry minutes 09:40, 11:40 and 14:40. The planner's CSV pre-analysis remains separate; no scheduler, broker integration, future-data source or live order interface is enabled.
 
-There is no holding-time limit or forced time close. The executor currently closes only on its implemented hard stop; take-profit and manual-close handling are not implemented. Paper fills do not model slippage, spread, fees, or partial fills. This is a demonstration ledger, not financial advice or a production risk engine.
-
-## Automation
-
-No launchd files or other scheduler definitions are present. The configured schedule is used for validation and preparation context; it does not run in the background or automatically produce signals. The pre-analysis CLI is manually invoked and reads only the CSV supplied by an operator. See [docs/AUTOMATION.md](docs/AUTOMATION.md).
+This software is experimental and is not financial advice. Paper sizing is illustrative and does not model contract multipliers, payouts, spread, fees, slippage or partial fills.
