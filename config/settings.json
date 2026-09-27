@@ -1,15 +1,20 @@
 {
-  "project": "Cold Limb",
-  "default_mode": "paper",
-  "markets": [
-    "Deriv VIX10",
-    "Deriv VIX25",
-    "Deriv VIX75",
-    "Deriv VIX100",
-    "similar volatility indices"
-  ],
-  "integrations": {
-    "broker": null,
-    "browser_automation": null
-  }
+  "project": "LEM",
+  "mode": "paper_only",
+  "symbol": "R_25",
+  "allowed_symbols": ["R_25", "R_75"],
+  "timeframe": "M1",
+  "higher_timeframe": "M15",
+  "sessions": ["09:30", "11:30", "14:30"],
+  "entry_times": ["09:40", "11:40", "14:40"],
+  "timezone": "Africa/Nairobi",
+  "allowed_weekdays": ["Monday", "Tuesday", "Wednesday", "Thursday"],
+  "max_trades_per_day": 3,
+  "risk_pct": 0.01,
+  "ENABLE_2LOSS_BREAKER": true,
+  "USE_BROWSER_FEED": false,
+  "paper_balance": 1000.0,
+  "event_lock_minutes": 30,
+  "event_lock_utc": [],
+  "deriv_app_id_env": "DERIV_APP_ID"
 }
