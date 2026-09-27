@@ -20,7 +20,9 @@
   ],
   "pre_analysis": {
     "purpose": ["volatility_regime", "RVI_state", "levels"],
-    "trade_decision": false
+    "trade_decision": false,
+    "analysis_window_minutes": 30,
+    "decision_horizons_minutes": [240, 180, 60, 45, 30, 15]
   },
   "execution": {
     "allowed_time_rule": "exact_local_minute_only",
