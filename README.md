@@ -1,10 +1,10 @@
 # LEM - volatility indices trading lab
 
-LEM is a research scaffold for volatility-index strategy ideas and backtesting. Existing agent and strategy modules are placeholders; market data, signal generation, broker connections, and trading are not implemented.
+LEM is a research scaffold for volatility-index strategy ideas and paper-trading workflow experiments. The repository now includes a small, standard-library-first paper ledger with a hard-coded-to-config schedule and risk checks. It is not a broker-connected or live trading system. Market-data connections, automated signals, and broker integrations are not configured.
 
 ## Quick start
 
-From a shell with Python 3.10 or newer:
+From a Catalina shell with Python 3.9 or newer:
 
 ```sh
 git clone https://github.com/M3lcharagu/lem.git
@@ -12,16 +12,15 @@ cd lem
 python3 -m agents.executor_agent --paper
 ```
 
-The command uses only the Python standard library. It performs a readiness check only; it does not fetch market data, calculate signals, simulate fills, connect to a broker, or submit orders. Expected output:
+The command uses the Python standard library and displays local paper-ledger status. It does not fetch data, create signals, or submit orders. See [docs/QUICKSTART.md](docs/QUICKSTART.md) for candidate and price inputs.
 
-```text
-LEM executor readiness: READY (paper-only check).
-Market data: not configured; no data fetched.
-Signals: not configured; no signals generated.
-Trading: disabled; no orders submitted.
-```
+## Schedule and paper safeguards
 
-See [docs/QUICKSTART.md](docs/QUICKSTART.md) for the same copy-pasteable setup and safety notes.
+The authoritative schedule is [config/execution_schedule.json](config/execution_schedule.json), in `Africa/Nairobi`: Monday through Thursday only, with sessions at 09:30, 11:30, and 14:30. Pre-analysis begins at 09:00, 11:00, and 14:00 to prepare volatility regime, RVI state, and levels only; it makes no trade decision. Entries are permitted for the exact local minutes 09:40, 11:40, and 14:40 only. The third session is intentionally 14:30 as specified. No wider execution window is inferred.
+
+Each accepted paper entry requires a correctly placed hard stop and is sized to at most 1% of the current paper balance. The ledger permits at most three accepted entries per Nairobi calendar day. A position is closed on a hard-stop trigger or at 45 minutes from entry when a supplied quote is processed; the 45-minute time exit has no implied profit target and can record a loss. Every candidate (accepted or rejected) and every closed outcome is appended as ASCII JSON Lines to `logs/paper_trades.jsonl`. Local state is stored in `data/paper_trader_state.json`; these runtime files are not committed.
+
+There is no live quote feed, so a time exit is processed only when the operator supplies a current quote. Paper fills do not model slippage, spread, fees, or partial fills. This is a demonstration ledger, not financial advice or a production risk engine. Review all behavior before use.
 
 ## RVI methodology note
 
@@ -31,10 +30,10 @@ References: [TradingView, Relative Vigor Index (RVI)](https://www.tradingview.co
 
 ## Scaffold
 
-- `agents/` contains lightweight agent placeholders.
+- `agents/` contains lightweight research, planning, and scheduled paper-execution modules.
 - `strategies/` contains a placeholder RVI strategy interface and research ideas.
-- `config/settings.json` is a starting point for future configuration.
-- `data/`, `logs/`, and `signals/` are empty tracked directories.
+- `config/settings.json` and `config/execution_schedule.json` contain starting configuration.
+- `data/`, `logs/`, and `signals/` are tracked runtime directories; paper state and logs are local runtime files.
 - `web_interface/` is a placeholder for future UI work.
 
-No trading or data integrations are configured. Treat all strategy concepts as research, not trading advice.
+Treat strategy concepts as research, not trading advice. No broker or actual market-data integration is configured.

@@ -34,3 +34,7 @@ dist/
 # Runtime logs: keep the directory placeholder only
 logs/*
 !logs/.gitkeep
+
+# Local paper-trader state
+/data/paper_trader_state.json
+/data/paper_trader_state.json.tmp
